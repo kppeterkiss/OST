@@ -1,0 +1,25 @@
+version: "3.8"
+services:
+    python_server:
+        build: ./python_server/.
+        networks:
+            python_net:
+                ipv4_address: 192.168.10.1
+        ports:
+            - "9999:9999"
+    python_client:
+        build: ./python_client/.
+        tty: true
+        depends_on:
+            - python_server
+        networks:
+            python_net:
+                ipv4_address: 192.168.10.100
+        ports:
+            - 22:22
+networks:
+    python_net:
+        ipam:
+            driver: default
+            config:
+                - subnet: 192.168.10.0/24
