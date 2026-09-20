@@ -2,7 +2,8 @@ import socket
 import os
 
 if __name__ == "__main__":
-    HOST, PORT = "localhost", 9999
+    #HOST, PORT = "localhost", 9999
+    #HOST, PORT = "host.docker.internal", 9999
     HOST, PORT = "python_server", 9999
 
 

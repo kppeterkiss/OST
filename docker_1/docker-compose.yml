@@ -4,7 +4,7 @@ services:
         build: ./python_server/.
         networks:
             python_net:
-                ipv4_address: 192.168.10.1
+                #ipv4_address: 192.168.10.1
         ports:
             - "9999:9999"
     python_client:
@@ -14,12 +14,12 @@ services:
             - python_server
         networks:
             python_net:
-                ipv4_address: 192.168.10.100
+                #ipv4_address: 192.168.10.100
         ports:
             - 22:22
 networks:
     python_net:
-        ipam:
-            driver: default
-            config:
-                - subnet: 192.168.10.0/24
+        #ipam:
+        #    driver: default
+        #    config:
+        #        - subnet: 192.168.10.0/24
