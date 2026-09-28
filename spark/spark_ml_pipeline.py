@@ -1,29 +1,67 @@
-# Setup: In Google Colab run: !pip install pyspark
+# 1. Install pyspark if in Colab: !pip install pyspark
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, rand
+from pyspark.sql.functions import col, when
+from pyspark.ml.feature import VectorAssembler, StandardScaler, StringIndexer
+from pyspark.ml.classification import LogisticRegression
+from pyspark.ml import Pipeline
+from pyspark.ml.evaluation import BinaryClassificationEvaluator
 
-# 1. Initialize SparkSession (Simulating a 4-core cluster locally)
+# Initialize local SparkSession
 spark = SparkSession.builder \
-    .appName("OpenSource_Class1_Catalyst") \
-    .master("local[4]") \
-    .config("spark.sql.adaptive.enabled", "false") \
+    .appName("ML_Master_Spark_Lab") \
+    .master("local[*]") \
+    .config("spark.driver.memory", "2g") \
     .getOrCreate()
 
-# 2. Generate 1,000,000 synthetic log records across 4 partitions
-df = spark.range(0, 1_000_000, numPartitions=4) \
-    .withColumn("status_code", (rand(seed=42) * 5 + 200).cast("int")) \
-    .withColumn("latency_ms", (rand(seed=7) * 500).cast("int"))
+# Create synthetic tabular dataset
+data = [
+    (25, 50000.0, "Private", 0),
+    (38, 110000.0, "Public", 1),
+    (42, 85000.0, "Private", 1),
+    (19, 22000.0, "Self-Emp", 0),
+    (55, 140000.0, "Public", 1),
+    (31, 62000.0, "Private", 0),
+    (48, 92000.0, "Self-Emp", 1),
+    (22, 29000.0, "Private", 0)
+]
+columns = ["age", "income", "sector", "default"]
+df = spark.createDataFrame(data, schema=columns)
 
-# 3. Write as Parquet (Columnar storage with built-in statistics)
-df.write.mode("overwrite").parquet("/tmp/server_logs.parquet")
+# 2. Inspect Lazy Execution: Transformations vs Actions
+filtered_df = df.filter(col("age") > 20)  # Transformation (instant, no execution)
+print("Physical Plan for Filter:")
+filtered_df.explain()  # Shows execution DAG without pulling data
 
-# 4. Lazy Evaluation & Predicate Pushdown
-# Notice: No computation happens when defining these transformations
-read_df = spark.read.parquet("/tmp/server_logs.parquet")
-filtered_df = read_df.filter(col("status_code") == 200).select("id", "latency_ms")
+# 3. Build a reproducible ML Pipeline
+# Step A: Index categorical strings to numeric indexes
+sector_indexer = StringIndexer(inputCol="sector", outputCol="sector_idx")
 
-# 5. Inspect the Physical Plan
-print("=== Catalyst Physical Execution Plan ===")
-filtered_df.explain(True)
-# Point out to students: 'PushedFilters: [IsNotNull(status_code), EqualTo(status_code,200)]'
-# The engine filters data while reading from disk, avoiding memory loading of unused rows.
+# Step B: Assemble all features into a single dense vector column
+assembler = VectorAssembler(
+    inputCols=["age", "income", "sector_idx"],
+    outputCol="raw_features"
+)
+
+# Step C: Scale the features
+scaler = StandardScaler(inputCol="raw_features", outputCol="features")
+
+# Step D: Classifier
+lr = LogisticRegression(featuresCol="features", labelCol="default")
+
+# Package into a Pipeline
+pipeline = Pipeline(stages=[sector_indexer, assembler, scaler, lr])
+
+# 4. Train-Test Split & Fit
+train_df, test_df = df.randomSplit([0.7, 0.3], seed=42)
+model = pipeline.fit(train_df)
+
+# 5. Evaluate Predictions
+predictions = model.transform(test_df)
+predictions.select("age", "income", "probability", "prediction", "default").show()
+
+evaluator = BinaryClassificationEvaluator(labelCol="default", metricName="areaUnderROC")
+auc = evaluator.evaluate(predictions)
+print(f"Test AUC: {auc:.3f}")
+
+# Stop the session
+spark.stop()
